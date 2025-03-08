@@ -3,14 +3,563 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Text Adventure</title>
+    <title>Terminal Game</title>
+    <style>
+        :root {
+            --bg-color: #0f0f0f;
+            --text-color: #00ff00;
+            --accent-color: #03a9f4;
+            --error-color: #ff5252;
+            --success-color: #4caf50;
+            --prompt-color: #ff9800;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        #terminal {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        #input-container {
+            display: flex;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+        }
+
+        #prompt {
+            color: var(--prompt-color);
+            margin-right: 10px;
+        }
+
+        #input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-color);
+            font-size: 16px;
+            outline: none;
+        }
+
+        .output-line {
+            margin-bottom: 5px;
+            word-wrap: break-word;
+        }
+
+        .success {
+            color: var(--success-color);
+        }
+
+        .error {
+            color: var(--error-color);
+        }
+
+        .accent {
+            color: var(--accent-color);
+        }
+
+        #game-container {
+            display: none;
+            border: 1px solid var(--accent-color);
+            margin: 10px 0;
+        }
+
+        /* Game Canvas */
+        #snake-canvas {
+            display: block;
+            background-color: #000;
+        }
+
+        /* ASCII Art */
+        .ascii-art {
+            white-space: pre;
+            line-height: 1.2;
+            color: var(--accent-color);
+            margin: 10px 0;
+        }
+
+        /* Matrix effect */
+        #matrix-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.1;
+        }
+
+        /* Mobile support */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to the Text Adventure</h1>
-    <div id="gameOutput"></div>
-    <input type="text" id="userInput" placeholder="Type your command...">
-    <button onclick="handleInput()">Enter</button>
+    <canvas id="matrix-canvas"></canvas>
+    <div id="terminal"></div>
+    <div id="game-container">
+        <canvas id="snake-canvas" width="300" height="300"></canvas>
+    </div>
+    <div id="input-container">
+        <div id="prompt">></div>
+        <input type="text" id="input" autofocus>
+    </div>
 
-    <script src="script.js"></script>
+    <script>
+        // Terminal functionality
+        const terminal = document.getElementById('terminal');
+        const input = document.getElementById('input');
+        const gameContainer = document.getElementById('game-container');
+        const commandHistory = [];
+        let historyIndex = -1;
+
+        // Initial welcome message
+        const welcomeAscii = `
+ ████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗     
+ ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║     
+    ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║     
+    ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║     
+    ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
+    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
+`;
+
+        // Add welcome message
+        printToTerminal(welcomeAscii, 'ascii-art');
+        printToTerminal('Welcome to Terminal Game v1.0', 'accent');
+        printToTerminal('Type "help" to see available commands', 'accent');
+        printToTerminal('');
+
+        // Event listener for input
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const command = input.value.trim();
+                
+                if (command) {
+                    // Add to history
+                    commandHistory.push(command);
+                    historyIndex = commandHistory.length;
+                    
+                    // Display command
+                    printToTerminal(`> ${command}`);
+                    
+                    // Process command
+                    processCommand(command);
+                    
+                    // Clear input
+                    input.value = '';
+                }
+            } else if (e.key === 'ArrowUp') {
+                // Navigate command history
+                e.preventDefault();
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    input.value = commandHistory[historyIndex];
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    input.value = commandHistory[historyIndex];
+                } else {
+                    historyIndex = commandHistory.length;
+                    input.value = '';
+                }
+            }
+        });
+
+        // Function to print to terminal
+        function printToTerminal(text, className = '') {
+            const line = document.createElement('div');
+            line.className = `output-line ${className || ''}`;
+            line.textContent = text;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        // Function to process commands
+        function processCommand(command) {
+            const cmd = command.toLowerCase().split(' ')[0];
+            const args = command.split(' ').slice(1);
+
+            switch (cmd) {
+                case 'help':
+                    showHelp();
+                    break;
+                case 'clear':
+                    clearTerminal();
+                    break;
+                case 'echo':
+                    printToTerminal(args.join(' '));
+                    break;
+                case 'snake':
+                    startSnakeGame();
+                    break;
+                case 'date':
+                    printToTerminal(new Date().toString());
+                    break;
+                case 'matrix':
+                    toggleMatrix();
+                    break;
+                case 'whoami':
+                    printToTerminal('Terminal User', 'accent');
+                    break;
+                case 'ls':
+                    listFiles();
+                    break;
+                case 'cat':
+                    catFile(args[0]);
+                    break;
+                case 'color':
+                    changeColor(args[0]);
+                    break;
+                default:
+                    printToTerminal(`Command not found: ${cmd}. Type 'help' for available commands.`, 'error');
+            }
+        }
+
+        // Help command
+        function showHelp() {
+            const commands = [
+                { cmd: 'help', desc: 'Show this help menu' },
+                { cmd: 'clear', desc: 'Clear the terminal' },
+                { cmd: 'echo [text]', desc: 'Print text to the terminal' },
+                { cmd: 'snake', desc: 'Play Snake game' },
+                { cmd: 'date', desc: 'Display current date and time' },
+                { cmd: 'matrix', desc: 'Toggle Matrix rain effect' },
+                { cmd: 'whoami', desc: 'Display current user' },
+                { cmd: 'ls', desc: 'List virtual files' },
+                { cmd: 'cat [filename]', desc: 'View content of a virtual file' },
+                { cmd: 'color [green/blue/orange/pink]', desc: 'Change terminal text color' }
+            ];
+
+            printToTerminal('Available Commands:', 'accent');
+            commands.forEach(({cmd, desc}) => {
+                printToTerminal(`  ${cmd.padEnd(20)} - ${desc}`);
+            });
+        }
+
+        // Clear terminal
+        function clearTerminal() {
+            terminal.innerHTML = '';
+        }
+
+        // Virtual file system
+        const virtualFiles = {
+            'readme.txt': 'Welcome to the Terminal Game!\nThis is a virtual terminal with games and utilities.\nType "help" to see available commands.',
+            'about.txt': 'Created by Claude, this terminal game demonstrates HTML, CSS and JavaScript capabilities.',
+            'secret.txt': 'You found the secret file! Here\'s a hint: try the "matrix" command!'
+        };
+
+        // List files
+        function listFiles() {
+            printToTerminal('Virtual Files:', 'accent');
+            Object.keys(virtualFiles).forEach(file => {
+                printToTerminal(`  ${file}`);
+            });
+        }
+
+        // Cat file
+        function catFile(filename) {
+            if (!filename) {
+                printToTerminal('Usage: cat [filename]', 'error');
+                return;
+            }
+            
+            if (virtualFiles[filename]) {
+                printToTerminal(virtualFiles[filename]);
+            } else {
+                printToTerminal(`File not found: ${filename}`, 'error');
+            }
+        }
+
+        // Change terminal color
+        function changeColor(color) {
+            const root = document.documentElement;
+            
+            switch (color) {
+                case 'green':
+                    root.style.setProperty('--text-color', '#00ff00');
+                    break;
+                case 'blue':
+                    root.style.setProperty('--text-color', '#00aaff');
+                    break;
+                case 'orange':
+                    root.style.setProperty('--text-color', '#ff9800');
+                    break;
+                case 'pink':
+                    root.style.setProperty('--text-color', '#ff69b4');
+                    break;
+                default:
+                    printToTerminal('Available colors: green, blue, orange, pink', 'error');
+                    return;
+            }
+            
+            printToTerminal(`Terminal color changed to ${color}`, 'success');
+        }
+
+        // Matrix effect
+        const matrixCanvas = document.getElementById('matrix-canvas');
+        const matrixCtx = matrixCanvas.getContext('2d');
+        let matrixEnabled = false;
+        let matrixInterval;
+
+        function toggleMatrix() {
+            matrixEnabled = !matrixEnabled;
+            
+            if (matrixEnabled) {
+                printToTerminal('Matrix mode activated', 'success');
+                startMatrix();
+            } else {
+                printToTerminal('Matrix mode deactivated');
+                clearInterval(matrixInterval);
+                matrixCtx.clearRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+            }
+        }
+
+        function startMatrix() {
+            // Set canvas size
+            matrixCanvas.width = window.innerWidth;
+            matrixCanvas.height = window.innerHeight;
+            
+            // Matrix characters
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%^&*()';
+            
+            // Font size
+            const fontSize = 10;
+            const columns = matrixCanvas.width / fontSize;
+            
+            // Array to store drops
+            const drops = [];
+            for (let i = 0; i < columns; i++) {
+                drops[i] = 1;
+            }
+            
+            function drawMatrix() {
+                // Black with opacity
+                matrixCtx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                matrixCtx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+                
+                // Green text
+                matrixCtx.fillStyle = '#0f0';
+                matrixCtx.font = `${fontSize}px monospace`;
+                
+                // Draw characters
+                for (let i = 0; i < drops.length; i++) {
+                    // Random character
+                    const char = chars[Math.floor(Math.random() * chars.length)];
+                    matrixCtx.fillText(char, i * fontSize, drops[i] * fontSize);
+                    
+                    // Send drop back to top randomly
+                    if (drops[i] * fontSize > matrixCanvas.height && Math.random() > 0.975) {
+                        drops[i] = 0;
+                    }
+                    
+                    drops[i]++;
+                }
+            }
+            
+            // Run drawMatrix every 33ms
+            matrixInterval = setInterval(drawMatrix, 33);
+        }
+
+        // Resize handler for matrix
+        window.addEventListener('resize', () => {
+            if (matrixEnabled) {
+                matrixCanvas.width = window.innerWidth;
+                matrixCanvas.height = window.innerHeight;
+            }
+        });
+
+        // Snake game
+        const snakeCanvas = document.getElementById('snake-canvas');
+        const snakeCtx = snakeCanvas.getContext('2d');
+        
+        let snake, food, direction, gameSpeed, gameInterval, gameActive, score;
+
+        function startSnakeGame() {
+            printToTerminal('Starting Snake game...', 'success');
+            printToTerminal('Use arrow keys to control. Press ESC to exit.', 'accent');
+            
+            // Show game container
+            gameContainer.style.display = 'block';
+            
+            // Focus game and setup keyboard controls
+            window.addEventListener('keydown', handleSnakeControls);
+            
+            // Initialize game
+            initSnakeGame();
+            
+            // Start game loop
+            gameInterval = setInterval(updateSnakeGame, gameSpeed);
+            gameActive = true;
+        }
+
+        function initSnakeGame() {
+            // Reset game state
+            snake = [{ x: 10, y: 10 }];
+            direction = 'right';
+            gameSpeed = 100;
+            score = 0;
+            
+            // Generate initial food
+            generateFood();
+            
+            // Render initial state
+            renderSnakeGame();
+        }
+
+        function generateFood() {
+            // Random position that's not on the snake
+            const gridSize = 15;
+            let position;
+            
+            do {
+                position = {
+                    x: Math.floor(Math.random() * (snakeCanvas.width / 20)),
+                    y: Math.floor(Math.random() * (snakeCanvas.height / 20))
+                };
+            } while (snake.some(segment => segment.x === position.x && segment.y === position.y));
+            
+            food = position;
+        }
+
+        function updateSnakeGame() {
+            // Calculate new head position
+            const head = { ...snake[0] };
+            
+            switch (direction) {
+                case 'up':
+                    head.y -= 1;
+                    break;
+                case 'down':
+                    head.y += 1;
+                    break;
+                case 'left':
+                    head.x -= 1;
+                    break;
+                case 'right':
+                    head.x += 1;
+                    break;
+            }
+            
+            // Check collision with walls
+            if (head.x < 0 || head.y < 0 || head.x >= snakeCanvas.width / 20 || head.y >= snakeCanvas.height / 20) {
+                endSnakeGame();
+                return;
+            }
+            
+            // Check collision with self
+            if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+                endSnakeGame();
+                return;
+            }
+            
+            // Add new head
+            snake.unshift(head);
+            
+            // Check if food is eaten
+            if (head.x === food.x && head.y === food.y) {
+                score += 10;
+                generateFood();
+            } else {
+                // Remove tail if no food is eaten
+                snake.pop();
+            }
+            
+            // Render updated state
+            renderSnakeGame();
+        }
+
+        function renderSnakeGame() {
+            // Clear canvas
+            snakeCtx.clearRect(0, 0, snakeCanvas.width, snakeCanvas.height);
+            
+            // Draw snake
+            snakeCtx.fillStyle = '#00ff00';
+            snake.forEach(segment => {
+                snakeCtx.fillRect(segment.x * 20, segment.y * 20, 18, 18);
+            });
+            
+            // Draw food
+            snakeCtx.fillStyle = '#ff0000';
+            snakeCtx.fillRect(food.x * 20, food.y * 20, 18, 18);
+            
+            // Draw score
+            snakeCtx.fillStyle = '#ffffff';
+            snakeCtx.font = '20px Courier New';
+            snakeCtx.fillText(`Score: ${score}`, 5, 20);
+        }
+
+        function handleSnakeControls(e) {
+            if (!gameActive) return;
+            
+            switch (e.key) {
+                case 'ArrowUp':
+                    if (direction !== 'down') direction = 'up';
+                    e.preventDefault();
+                    break;
+                case 'ArrowDown':
+                    if (direction !== 'up') direction = 'down';
+                    e.preventDefault();
+                    break;
+                case 'ArrowLeft':
+                    if (direction !== 'right') direction = 'left';
+                    e.preventDefault();
+                    break;
+                case 'ArrowRight':
+                    if (direction !== 'left') direction = 'right';
+                    e.preventDefault();
+                    break;
+                case 'Escape':
+                    endSnakeGame();
+                    e.preventDefault();
+                    break;
+            }
+        }
+
+        function endSnakeGame() {
+            // Stop game loop
+            clearInterval(gameInterval);
+            gameActive = false;
+            
+            // Remove keyboard event listener
+            window.removeEventListener('keydown', handleSnakeControls);
+            
+            // Hide game container
+            gameContainer.style.display = 'none';
+            
+            // Print score to terminal
+            printToTerminal(`Game over! Your score: ${score}`, 'accent');
+            
+            // Refocus input
+            input.focus();
+        }
+
+        // Focus input on load
+        window.addEventListener('load', () => {
+            input.focus();
+        });
+    </script>
 </body>
 </html>
